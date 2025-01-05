@@ -95,7 +95,8 @@ class Song:
     self.__extract_image(rows)
     
     i = 0
-    for row in rows:
+    for i in range(rows.length):
+      row = rows[i]
       label = row.find('b')
       if label:
         label_text = label.get_text().strip()
@@ -115,7 +116,7 @@ class Song:
         elif label_text == "Description":
             self.__extract_description(rows, i)
 
-      i += 1  # Move to the next row
+  
     return True
   
   def __extract_disambiguation(self) -> None:
