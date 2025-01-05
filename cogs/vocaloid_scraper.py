@@ -95,8 +95,7 @@ class Song:
     self.__extract_image(rows)
     
     i = 0
-    while i < len(rows):
-      row = rows[i]
+    for row in rows:
       label = row.find('b')
       if label:
         label_text = label.get_text().strip()
