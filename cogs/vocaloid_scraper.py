@@ -94,27 +94,25 @@ class Song:
 
     self.__extract_image(rows)
     
-    i = 0
-    for i in range(rows.length):
-      row = rows[i]
+    for row in rows:
       label = row.find('b')
       if label:
         label_text = label.get_text().strip()
 
         if label_text == "Song title":
-            self.__extract_title(rows, i)
+            self.__extract_title(row)
         elif label_text == "Original Upload Date":
-            self.__extract_date(rows, i)
+            self.__extract_date(row)
         elif label_text == "Singer":
-            self.__extract_singers(rows, i)
+            self.__extract_singers(row)
         elif label_text == "Producer(s)":
-            self.__extract_producers(rows, i)
+            self.__extract_producers(row)
         elif label_text == "Views":
-            self.__extract_views(rows, i)
+            self.__extract_views(row)
         elif label_text == "Links":
-            self.__extract_links(rows, i)
+            self.__extract_links(row)
         elif label_text == "Description":
-            self.__extract_description(rows, i)
+            self.__extract_description(row)
 
   
     return True
@@ -148,21 +146,18 @@ class Song:
     if image_tag and image_tag.get('src'):
       self.image = image_tag['src']
 
-  def __extract_title(self, rows, index):
-    self.title = rows[index + 1].find('b').get_text().strip()
+  def __extract_title(self, row):
+    self.title = row.find('b').get_text().strip()
 
-  def __extract_date(self, rows, index):
-    date_td = rows[index + 1]
-    self.date = date_td.get_text().replace('\xa0', ' ').strip()
+  def __extract_date(self, row):
+    self.date = row.get_text().replace('\xa0', ' ').strip()
       
-  def __extract_singers(self, rows, index):
-    singer_td = rows[index + 1]
-    for singer in singer_td.find_all('a'):
+  def __extract_singers(self, row):
+    for singer in row.find_all('a'):
       self.singers.append(singer.get_text().strip())
 
-  def __extract_producers(self, rows, index): # this is a very, very shitty chatgpt solution. FIX THIS FR
-    producer_td = rows[index + 1]
-    producer_text = producer_td.get_text(separator="\n").strip()
+  def __extract_producers(self, row): # this is a very, very shitty chatgpt solution. FIX THIS FR
+    producer_text = row.get_text(separator="\n").strip()
 
     # Split the text by newlines (each line represents a producer group)
     producers_data = producer_text.split("\n")
@@ -180,7 +175,7 @@ class Song:
         link = None
 
         # Find the link if it exists (this indicates a named link)
-        link_tag = producer_td.find('a', string=producer_line)
+        link_tag = row.find('a', string=producer_line)
         if link_tag:
             name = link_tag.get_text().strip()
             link = link_tag.get('href')
@@ -210,17 +205,16 @@ class Song:
         for name in data['names']
     ]
 
-  def __extract_views(self, rows, index):
-    self.views = rows[index + 1].get_text().strip()
+  def __extract_views(self, row):
+    self.views = row.get_text().strip()
 
-  def __extract_links(self, rows, index):
-    link_td = rows[index + 1]
-    for link in link_td.find_all('a'):
+  def __extract_links(self, row):
+    for link in row.find_all('a'):
       href = link.get('href')
       title = link.get_text()
       self.links.append({'href': href, 'title': title})
 
-  def __extract_description(self, rows, index):
-    description_content = rows[index + 1].find('div', class_='NavContent')
+  def __extract_description(self, row):
+    description_content = row.find('div', class_='NavContent')
     if description_content:
       self.description = description_content.get_text().strip()
