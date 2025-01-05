@@ -92,7 +92,7 @@ class Song:
   def __set_info(self) -> bool:
     rows = self.content.find('center').find_all('tr')
 
-    self.extract_image(rows)
+    self.__extract_image(rows)
     
     i = 0
     while i < len(rows):
@@ -142,7 +142,7 @@ class Song:
         for j in range(colspan):
           self.lyrics[i + j] += text
 
-  def extract_image(self, rows):
+  def __extract_image(self, rows):
     first_td = rows[0].find('td')
     image_tag = first_td.find('img')
     if image_tag and image_tag.get('src'):
