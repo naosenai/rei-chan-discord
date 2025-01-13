@@ -34,9 +34,6 @@ class RedditRSSCog(commands.Cog):
         self.newest_timestamp = None
         self.data_folder = None
         self.time_files = {}
-        #self.access_token = None
-        #self.refresh_token = None
-        #self.token_expires_at = None
 
     def cog_unload(self):
         self.rss_feed_task.cancel()
