@@ -1,23 +1,18 @@
 import json
 import time
 import os
-from datetime import datetime
+import re
 
 import discord
 from discord.ext import commands, tasks
 import feedparser
 
-#import requests
-#from requests.auth import HTTPBasicAuth
+import requests
+from bs4 import BeautifulSoup
 
 
 
-#CLIENT_ID = os.getenv('CLIENT_ID')
-#CLIENT_SECRET = os.getenv('CLIENT_SECRET')
-#USER_AGENT = os.getenv('USER_AGENT')
-#USERNAME = os.getenv('USERNAME')
-#PASSWORD = os.getenv('PASSWORD')
-
+USER_AGENT = os.getenv('USER_AGENT')
 FEED_CHANNELS = {
     os.getenv('QUEUE_RSS_URL'): {
         'channel': os.getenv('QUEUE_RSS_CHANNEL'), 
@@ -26,7 +21,11 @@ FEED_CHANNELS = {
     os.getenv('LOG_RSS_URL'): {
         'channel': os.getenv('LOG_RSS_CHANNEL'),
         'type': 'log'
-    }  
+    } ,
+    os.getenv('REPORT_RSS_URL'): {
+        'channel': os.getenv('REPORT_RSS_CHANNEL'),
+        'type': 'report'
+    }
 }
 
 class RedditRSSCog(commands.Cog):
@@ -41,64 +40,6 @@ class RedditRSSCog(commands.Cog):
 
     def cog_unload(self):
         self.rss_feed_task.cancel()
-
-    # Found out reddit provides unlocked RSS feeds :facepalm:
-    # Some of this code may still be useful for scraping other information though
-    '''
-    def request_token(self, data: dict):
-        auth = HTTPBasicAuth(CLIENT_ID, CLIENT_SECRET)
-        headers = {'User-Agent': USER_AGENT}
-        data = data
-        response = requests.post('https://www.reddit.com/api/v1/access_token', auth=auth, data=data, headers=headers)
-        print(response.json())
-
-        if response.status_code == 200:
-            tokens = response.json()
-            self.access_token = tokens['access_token']
-            self.refresh_token = tokens['refresh_token']
-            self.token_expires_at = time.time() + tokens['expires_in']
-            return self.access_token
-        else:
-            raise Exception(f"Failed to obtain token: {response.status_code}")
-
-    def get_access_token(self):
-        data = {
-            'grant_type': 'password',
-            'username': USERNAME,
-            'password': PASSWORD
-        }
-        return self.request_token(data)
-
-
-    def refresh_access_token(self):
-        if not self.refresh_token:
-            raise Exception("No refresh token available.")
-        data = {
-            'grant_type': 'refresh_token',
-            'refresh_token': self.refresh_token
-        }
-        return self.request_token(data)
-
-
-    def fetch_reddit_rss_feed(self, feed_url):
-        if self.token_expires_at is None or time.time() > self.token_expires_at:
-            self.get_access_token()
-        elif time.time() > self.token_expires_at - 300:  # Refresh ~5 minutes before expiration
-            self.refresh_access_token()
-
-        headers = {
-            'Authorization': f'bearer {self.access_token}',
-            'User-Agent': USER_AGENT
-        }
-
-        response = requests.get(feed_url, headers=headers)
-
-        if response.status_code == 200:
-            feed = feedparser.parse(response.content)
-            return feed.entries
-        else:
-            raise Exception(f"Failed to fetch Reddit RSS feed: {response.status_code}")
-    '''
 
     def set_dir(self):
         self.data_folder = os.path.join(os.path.dirname(__file__), "data")
@@ -130,21 +71,43 @@ class RedditRSSCog(commands.Cog):
     def is_post_too_old(self, post_time, type):
         prev_time = self.load_last_post_time(type)
         return post_time <= prev_time
+    
+    def formatted_description(self, entry):
+        html_content = entry.get('content', [{}])[0].get('value')
+        soup = BeautifulSoup(html_content, 'html.parser')
+
+        for submitted_tag in soup.find_all(string=re.compile(r'\bsubmitted by\b')):
+            parent_tag = submitted_tag.find_parent()
+            if parent_tag:
+                for link_tag in parent_tag.find_all('a', string=re.compile(r'/u/')):
+                    link_tag.decompose()
+                submitted_tag.extract()
+
+        comments_link = soup.find('a', string='[comments]')
+        if comments_link:
+            comments_link.decompose()
+
+        for a_tag in soup.find_all('a'):
+            link_text = a_tag.get_text()
+            link_url = a_tag.get('href')
+            a_tag.replace_with(f'[{link_text}]({link_url})')
+
+        return f"{soup.get_text(separator=' ', strip=True)}"
         
     async def queue_message(self, entry, channel):
-        embed = discord.Embed(title=f"{entry.title}",
-                      url=f"{entry.link}",
-                      description=f"TEMPORARY\n```{entry}```",
+        embed = discord.Embed(title=f"{entry.get('title')}",
+                      url=f"{entry.get('link')}",
+                      description=self.formatted_description(entry),
                       colour=0xf91565)
         embed.set_author(name="Mod Queue for r/sfwteto",
                         icon_url="https://styles.redditmedia.com/t5_daczgy/styles/communityIcon_6jbxb9pgt8be1.png")
-        embed.set_image(url=f"{entry.image__url}")
+        embed.set_image(url=entry.get('image__url'))
         embed.set_footer(text=f"{entry.author} submitted for review at {entry.date}")
 
         view = discord.ui.View()
         queue_button = discord.ui.Button(style=discord.ButtonStyle.link, label="📋Queue", url="https://www.reddit.com/mod/sfwteto/queue/")
-        author_button = discord.ui.Button(style=discord.ButtonStyle.link, label="👤Author", url=f"{entry.author__url}")
-        post_button = discord.ui.Button(style=discord.ButtonStyle.link, label="🔗Post", url=f"{entry.link}")
+        author_button = discord.ui.Button(style=discord.ButtonStyle.link, label="👤Author", url=f"{entry.get('authors', [{}])[0].get('href')}")
+        post_button = discord.ui.Button(style=discord.ButtonStyle.link, label="🔗Post", url=f"{entry.get('link')}")
         view.add_item(queue_button)
         view.add_item(author_button)
         view.add_item(post_button)
@@ -152,32 +115,40 @@ class RedditRSSCog(commands.Cog):
         await channel.send(embed=embed, view=view)
     
     async def log_message(self, entry, channel):
-        embed = discord.Embed(title=f"{entry.title}",
-                      url=f"{entry.link}",
+        embed = discord.Embed(title=entry.get('title'),
+                      url=entry.get('link'),
                       colour=0xf91565)
         embed.set_author(name="Mod Log for r/sfwteto",
                         icon_url="https://styles.redditmedia.com/t5_daczgy/styles/communityIcon_6jbxb9pgt8be1.png")
-        embed.set_footer(text=f"{entry.author} executed this action at {entry.date}")
+        embed.set_footer(text=f"{entry.get('author')} executed this action at {entry.get('date')}")
 
         view = discord.ui.View()
-        queue_button = discord.ui.Button(style=discord.ButtonStyle.link, label="📋Mod Action", url=f"{entry.id}")
-        profile_button = discord.ui.Button(style=discord.ButtonStyle.link, label="👤Mod Profile", url=f"{entry.href}")
-        link_button = discord.ui.Button(style=discord.ButtonStyle.link, label="🔗Affected Post", url=f"{entry.link}")
+        queue_button = discord.ui.Button(style=discord.ButtonStyle.link, label="📋Mod Action", url=entry.get('id'))
+        profile_button = discord.ui.Button(style=discord.ButtonStyle.link, label="👤Mod Profile", url=entry.get('href'))
+        link_button = discord.ui.Button(style=discord.ButtonStyle.link, label="🔗Affected Post", url=entry.get('link'))
         view.add_item(queue_button)
         view.add_item(profile_button)
         view.add_item(link_button)
         
         await channel.send(embed=embed, view=view)
 
-    @tasks.loop(minutes=2)
+    async def report_message(self, entry, channel):
+        await self.queue_message(entry, channel) # For now, just send the same message as a queue message
+
+    @tasks.loop(minutes=3)
     async def rss_feed_task(self):
         try:
             for feed_url, feed_info in FEED_CHANNELS.items():
-                rss_entries = feedparser.parse(feed_url).entries
-                rss_entries.reverse()
-
-                if not rss_entries:
+                headers = {
+                    'User-Agent': USER_AGENT
+                }
+                response = requests.get(feed_url, headers=headers)
+                if response.status_code != 200:
+                    print(f"Error fetching feed: {response.status_code}")
                     continue
+                else:
+                    rss_entries = feedparser.parse(response.text).entries
+                    rss_entries.reverse()
 
                 type = feed_info['type']
                 channel = self.bot.get_channel(feed_info['channel'])
@@ -199,7 +170,6 @@ class RedditRSSCog(commands.Cog):
 
                     await message_function(entry, channel)
                     time.sleep(1)
-
                 self.save_last_post_time(self.newest_timestamp, type)
                 self.newest_timestamp = None
 
