@@ -31,9 +31,10 @@ FEED_CHANNELS = {
 class RedditRSSCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.newest_timestamp = None
+        self.newest_timestamp = 0
         self.data_folder = None
         self.time_files = {}
+        self.guild = None
 
     def cog_unload(self):
         self.rss_feed_task.cancel()
@@ -108,8 +109,10 @@ class RedditRSSCog(commands.Cog):
         view.add_item(queue_button)
         view.add_item(author_button)
         view.add_item(post_button)
-        
-        await channel.send(embed=embed, view=view)
+
+        role = self.guild.get_role(int(os.getenv('QUEUE_RSS_PING')))
+        mention = role.mention
+        await channel.send(f"{mention}", embed=embed, view=view)
     
     async def log_message(self, entry, channel):
         embed = discord.Embed(title=entry.get('title'),
@@ -120,20 +123,23 @@ class RedditRSSCog(commands.Cog):
         embed.set_footer(text=f"{entry.get('author')} executed this action at {entry.get('date')}")
 
         view = discord.ui.View()
-        queue_button = discord.ui.Button(style=discord.ButtonStyle.link, label="📋Mod Action", url=entry.get('id'))
+        #queue_button = discord.ui.Button(style=discord.ButtonStyle.link, label="📋Mod Action", url=entry.get('id'))
         profile_button = discord.ui.Button(style=discord.ButtonStyle.link, label="👤Mod Profile", url=entry.get('href'))
         link_button = discord.ui.Button(style=discord.ButtonStyle.link, label="🔗Affected Post", url=entry.get('link'))
-        view.add_item(queue_button)
+        #view.add_item(queue_button)
         view.add_item(profile_button)
         view.add_item(link_button)
         
-        await channel.send(embed=embed, view=view)
+        role = self.guild.get_role(int(os.getenv('LOG_RSS_PING')))
+        mention = role.mention
+        await channel.send(f"{mention}", embed=embed, view=view)
 
     async def report_message(self, entry, channel):
         await self.queue_message(entry, channel) # For now, just send the same message as a queue message
 
     @tasks.loop(minutes=3)
     async def rss_feed_task(self):
+        self.guild = await self.bot.fetch_guild(int(os.getenv('GUILD_ID')))
         try:
             for feed_url, feed_info in FEED_CHANNELS.items():
                 headers = {
@@ -148,9 +154,7 @@ class RedditRSSCog(commands.Cog):
                     rss_entries.reverse()
 
                 type = feed_info['type']
-                channel = self.bot.get_channel(feed_info['channel'])
-                if not channel:
-                    channel = await self.bot.fetch_channel(feed_info['channel'])
+                channel = await self.bot.fetch_channel(feed_info['channel'])
 
                 message_function = getattr(self, f'{type}_message', None)
                 if not message_function:
@@ -168,7 +172,7 @@ class RedditRSSCog(commands.Cog):
                     await message_function(entry, channel)
                     time.sleep(1)
                 self.save_last_post_time(self.newest_timestamp, type)
-                self.newest_timestamp = None
+                self.newest_timestamp = 0
 
         except Exception as e:
             print(f"Error fetching Reddit RSS feed: {e}")
