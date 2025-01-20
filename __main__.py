@@ -7,6 +7,7 @@ import time
 
 
 start_time = time.time()
+
 load_dotenv()
 TOKEN = getenv('DISCORD_TOKEN')  
 

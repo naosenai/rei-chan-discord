@@ -6,3 +6,4 @@ cogs/components/__pycache__/vocaloid_scraper.cpython-311.pyc
 cogs/data/timestamp_log.json
 cogs/data/timestamp_queue.json
 cogs/data/timestamp_report.json
+.vscode/settings.json
