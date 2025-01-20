@@ -152,7 +152,7 @@ class Song:
     def apply_discord_formatting(self, text: str, style: str) -> str:
         formatted_text = text.rstrip('\n')
         formatted_style = re.sub(r'\s*:\s*', ': ', re.sub(r';\s*', '; ', style))
-        if 'font-family: monospace' in formatted_style:
+        if 'font-family: monospace' in formatted_style or 'color: gray' in formatted_style:
             formatted_text = f"`{formatted_text}`"
 
         if 'font-style: italic' in formatted_style:
