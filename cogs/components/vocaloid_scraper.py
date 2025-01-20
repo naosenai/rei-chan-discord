@@ -1,4 +1,5 @@
 import urllib.parse
+import re
 
 import requests as r
 from bs4 import BeautifulSoup as bs
@@ -131,17 +132,44 @@ class Song:
         rows = lyrics.tbody.findAll('tr')
         for row in rows:
             cols = row.findAll('td')
+            style = row.get('style', '')
+
             for i, col in enumerate(cols):
                 colspan = int(col.get('colspan', 1))
-                text = col.get_text()
+
                 while len(self.lyrics) < i + colspan:
                     self.lyrics.append("")
+
                 if len(col.find_all('br')) > 0 and not col.get_text(strip=True):
                     for i in range(len(self.lyrics)):
                         self.lyrics[i] += "\n"
                 else:
+                    text = col.get_text()
+                    text = self.apply_discord_formatting(text, style)
                     for j in range(colspan):
                         self.lyrics[i + j] += text
+
+    def apply_discord_formatting(self, text: str, style: str) -> str:
+        formatted_text = text.rstrip('\n')
+        formatted_style = re.sub(r'\s*:\s*', ': ', re.sub(r';\s*', '; ', style))
+        if 'font-family: monospace' in formatted_style:
+            formatted_text = f"`{formatted_text}`"
+
+        if 'font-style: italic' in formatted_style:
+            formatted_text = f"*{formatted_text}*"
+
+        if 'font-weight: bold' in formatted_style:
+            formatted_text = f"**{formatted_text}**"
+
+        if 'text-decoration: line-through' in formatted_style:
+            formatted_text = f"~~{formatted_text}~~"
+
+        if 'text-decoration: underline' in formatted_style:
+            formatted_text = f"__{formatted_text}__"
+
+        if text.endswith('\n'):
+            formatted_text += '\n'
+        return formatted_text
 
     def __extract_image(self, rows):
         first_td = rows[0].find('td')
