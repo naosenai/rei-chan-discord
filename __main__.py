@@ -19,6 +19,7 @@ cogs = [
 class Rei(commands.Bot):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.is_first_boot = True
 
     async def setup_hook(self):
         for cog in cogs:
@@ -31,8 +32,10 @@ class Rei(commands.Bot):
         print(f"Preloading finished in {elapsed_time:.2f} seconds, {self.user} is waking up!")
 
     async def on_ready(self):
-        await self.sync_commands()
-        await self.start_rss_feed_task()
+        if self.is_first_boot:
+            await self.sync_commands()
+            await self.start_rss_feed_task()
+            self.is_first_boot = False
 
     async def on_error(self, event, *args, **kwargs):
         print(f"Unexpected error occurred: {event}, {args}, {kwargs}")

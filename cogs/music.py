@@ -124,9 +124,12 @@ async def selector_callback(_interaction, button):
     await initialize_lyrics(session)
 
 async def lyrics_callback(_interaction, button):
+    button.view.stop()
+    button.view.clear_items()
     session = button.session
     session.lyrics_page = [button.label, int(button.custom_id)]
     await lyrics_embed(session)
+    await lyrics_view(session)
 
 async def undo_callback(_interaction, button):
     button.view.stop()
@@ -248,7 +251,8 @@ async def lyrics_view(session):
                                  session=session,
                                  callback_func=lyrics_callback,
                                  style=discord.ButtonStyle.primary,
-                                 custom_id="0"
+                                 custom_id="0",
+                                 disabled=session.lyrics_page[1] == 0
     )
     romanized_button = BaseButton(label="Romanized",    
                                   row=1,
@@ -257,7 +261,7 @@ async def lyrics_view(session):
                                   callback_func=lyrics_callback,
                                   style=discord.ButtonStyle.primary,
                                   custom_id="1",
-                                  disabled=len(session.lyrics_data.lyrics) < 2 or session.lyrics_data.lyrics[1] == ""
+                                  disabled=session.lyrics_page[1] == 1 or len(session.lyrics_data.lyrics) < 2 or session.lyrics_data.lyrics[1] == ""
     )
     translated_button = BaseButton(label="Translated", 
                                    row=1,
@@ -266,7 +270,7 @@ async def lyrics_view(session):
                                    callback_func=lyrics_callback,
                                    style=discord.ButtonStyle.primary,
                                    custom_id="2",
-                                   disabled=len(session.lyrics_data.lyrics) < 3 or session.lyrics_data.lyrics[2] == ""
+                                   disabled=session.lyrics_page[1] == 2 or len(session.lyrics_data.lyrics) < 3 or session.lyrics_data.lyrics[2] == ""
     )
     undo_button = BaseButton(label="↶", 
                             row=2,
