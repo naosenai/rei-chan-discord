@@ -12,8 +12,9 @@ load_dotenv()
 TOKEN = getenv('DISCORD_TOKEN')  
 
 cogs = [
-    'cogs.music',
-    'cogs.reddit'
+    'cogs.music.music',
+    'cogs.reddit.reddit',
+    'cogs.games.games'
 ]
 
 class Rei(commands.Bot):
