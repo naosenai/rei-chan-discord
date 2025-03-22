@@ -51,8 +51,8 @@ class Rei(commands.Bot):
 
     async def start_rss_feed_task(self):
         try:
-            reddit_cog = self.get_cog('RedditRSSCog')
-            await reddit_cog.rss_feed_task.start()
+            feed = self.get_cog('RSSFeed')
+            await feed.rss_feed_task.start()
         except Exception as e:
             print(f"Error starting RSS feed task: {e}")
 
