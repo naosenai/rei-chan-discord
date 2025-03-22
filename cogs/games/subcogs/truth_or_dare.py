@@ -1,5 +1,3 @@
-from typing import Optional
-
 import discord
 from discord.ext import commands
 from discord import app_commands
@@ -46,7 +44,7 @@ class TruthOrDare(commands.Cog):
     @app_commands.command(name="truth", description="Sends a random truth question.")
     @app_commands.describe(type="The type of truth question to ask.")
     @app_commands.choices(type=[app_commands.Choice(name=key, value=key) for key in get_keys('TRUTH')])
-    async def truth(self, interaction: discord.Interaction, type: Optional[str] = None):
+    async def truth(self, interaction: discord.Interaction, type: str = "RANDOM"):
         await self.message_logic(interaction, "TRUTH", type)
     
     @app_commands.user_install
@@ -55,7 +53,7 @@ class TruthOrDare(commands.Cog):
     @app_commands.command(name="dare", description="Sends a random dare question.")
     @app_commands.describe(type="The type of dare to give.")
     @app_commands.choices(type=[app_commands.Choice(name=key, value=key) for key in get_keys('DARE')])
-    async def dare(self, interaction: discord.Interaction, type: Optional[str] = None):
+    async def dare(self, interaction: discord.Interaction, type: str = "RANDOM"):
         await self.message_logic(interaction, "DARE", type)
 
     @app_commands.user_install

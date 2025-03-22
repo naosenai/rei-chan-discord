@@ -1476,10 +1476,5 @@ def retrieve_question(qtype, category = None):
     question = random.choice(qtype[category])
     return (question, f"{category} #{qtype[category].index(question) + 1}")
 
-def get_keys(type):
-    if type == "TRUTH":
-        return list(truths.keys())
-    elif type == "DARE":
-        return list(dares.keys())
-    else:
-        return None
+def get_keys(qtype):
+    return list(truths.keys()) if qtype == "TRUTH" else list(dares.keys())
