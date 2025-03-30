@@ -56,7 +56,7 @@ class Song:
             return False
         links = res.find_all('a', class_='unified-search__result__title')
         for link in links:
-            href = link.get('href')
+            href = urllib.parse.unquote(link.get('href'))
             title = link.get('data-title')
             self.links.append({'href': href, 'title': title})
         
