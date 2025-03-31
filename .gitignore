@@ -19,3 +19,5 @@ cogs/reddit/subcogs/__pycache__/rss_feed.cpython-311.pyc
 cogs/reddit/subcogs/data/timestamp_log.json
 cogs/reddit/subcogs/data/timestamp_queue.json
 cogs/reddit/subcogs/data/timestamp_report.json
+cogs/music/subcogs/lyrics/__pycache__/lyrics.cpython-311.pyc
+cogs/music/subcogs/lyrics/components/__pycache__/vocaloid_scraper.cpython-311.pyc
