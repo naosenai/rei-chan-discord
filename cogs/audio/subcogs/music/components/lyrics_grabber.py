@@ -1,199 +1,214 @@
 import requests
+import mwparserfromhell
 import re
 
-# This is the updated version of the vocaloid_scraper.py file. Not yet implemented, but fully functional. 
-# I highly recommend using this over the fuckery in the last file, if you choose to do so.
 
-class SongInfo():
+
+class SongInfo:
     def __init__(self):
         self.wiki_url = "https://vocaloidlyrics.fandom.com"
-
-        self.query_input = None
+        self.headers = {"User-Agent": "Rei-Chan/1.0"}
         self.query_results = None
-
-        self.page_input = None
         self.page_title = None
-        self.page_content_warning = None
-        self.page_image = None
-        self.page_date = None
-        self.page_singers = None
-        self.page_producers = None
-        self.page_views = None
-        self.page_links = None
-        self.page_extra_links = None
-        self.page_description = None
-        self.page_lyrics = None
+        self.wiki_code = None
 
-    def get_query(self, query):
-        self.query_input = query
-        api_url = f"{self.wiki_url}/api.php?action=query&list=search&srsearch={query}&format=json"
-        response = requests.get(api_url)
-        if response.status_code == 200:
-            data = response.json()
-            search_results = data['query']['search']
-            if search_results:
-                self.query_results = []
-                for page in search_results:
-                    self.query_results.append((page['title'], f"{self.wiki_url}/wiki/{page['title'].replace(' ', '_')}"))
-                return False
-            else:
-                return "Failed to discover results for '{self.page_query}'."
-        else:
-            return "Failed to retrieve content", response.status_code
+    def request_query(self, query):
+        url = f"{self.wiki_url}/api.php?action=query&list=search&srsearch={query}&format=json"
+        res = requests.get(url, headers=self.headers)
+        if res.status_code == 200:
+            try:
+                results = res.json()['query']['search']
+                self.query_results = [(r['title'], f"{self.wiki_url}/wiki/{r['title'].replace(' ', '_')}") for r in results]
+                return True
+            except KeyError:
+                return None
+        return False
 
-    def get_page(self, title):
-        self.page_input = title
-        api_url = f"{self.wiki_url}/api.php?action=query&prop=revisions&rvprop=content&titles={title}&format=json"
-        response = requests.get(api_url)
-        if response.status_code == 200:
-            data = response.json()
-            pages = data['query']['pages']
-            for _, page_data in pages.items():
-                self.page_title = page_data['title']
-                revisions = page_data.get('revisions', [])
-                if revisions:
-                    content = revisions[0].get('*', 'No content available.')
-                    #print(content)
+    def request_page(self, title):
+        self.page_title = title
+        url = f"{self.wiki_url}/api.php?action=query&prop=revisions&rvprop=content&titles={title}&format=json"
+        res = requests.get(url, headers=self.headers)
+        if res.status_code == 200:
+            pages = res.json()['query']['pages']
+            for _, page in pages.items():
+                self.wiki_code = mwparserfromhell.parse(page['revisions'][0]['*'])
+                print(self.wiki_code)
+                return True
+        return False
+    
+    def get_content_warning(self):
+        for template in self.wiki_code.filter_templates():
+            name = template.name.lower().strip()
+            if name in ['explicit', 'questionable']:
+                return (name.capitalize(), template.get(1).value.strip_code().strip())
+        return None
+    
+    def get_image(self):
+        for template in self.wiki_code.filter_templates():
+            if "infobox" in template.name.lower():
+                if template.has('image'):
+                    filename = template.get('image').value.strip_code().strip()
+                    return f"{self.wiki_url}/wiki/File:{filename.replace(' ', '_')}"
+        return None
+    
+    def get_title(self):
+        for template in self.wiki_code.filter_templates():
+            if "infobox" in template.name.lower() and template.has('songtitle'):
+                return template.get('songtitle').value.strip_code().strip().strip('"')
+        return self.page_title
+    
+    def get_color(self):
+        for template in self.wiki_code.filter_templates():
+            if "infobox" in template.name.lower() and template.has("color"):
+                color_value = template.get("color").value.strip_code().strip()
+                if ";" in color_value:
+                    return color_value.split(";")[0].strip()
+                return color_value
+        return None
 
-                    self.page_content_warning = self.extract_content_warning(content)
-                    self.page_image = self.extract_image(content)
-                    self.page_description = self.extract_description(content)
-                    self.page_lyrics = self.extract_lyrics(content)
-                    self.page_date = self.extract_date(content)
-                    self.page_singers = self.extract_singers(content)
-                    self.page_producers = self.extract_producers(content)
-                    self.page_views = self.extract_views(content)
-                    self.page_links = self.extract_links(content)
-                    self.page_extra_links = self.extract_extra_links(content)
-
-                    return False
+    def get_upload_date(self):
+        for template in self.wiki_code.filter_templates():
+            if "infobox" in template.name.lower() and template.has('original upload date'):
+                date_template = template.get('original upload date').value
+                if date_template.strip_code().strip() == "":
+                    if date_template.filter_templates():
+                        inner = date_template.filter_templates()[0]
+                        year = inner.get(1).value.strip_code().strip() if inner.has(1) else ''
+                        month = inner.get(2).value.strip_code().strip() if inner.has(2) else ''
+                        day = inner.get(3).value.strip_code().strip() if inner.has(3) else ''
+                        return f"{month}/{day}/{year}"
                 else:
-                    return "Failed to access content for '{self.page_title}'."
-        else:
-            return "Failed to retrieve content", response.status_code
-        
-    def extract_description(self, content):
-        match = re.search(r"\|description\s*=\s*(.*?)\n", content, re.DOTALL)
-        return match.group(1).strip() if match else False
+                    return date_template.strip_code().strip()
+        return None
 
-    def extract_image(self, content):
-        match = re.search(r"\|image\s*=\s*(.*?)\n", content, re.DOTALL)
-        if match:
-            return f"{self.wiki_url}/wiki/File:{match.group(1).replace(' ', '_')}"
-        return False
+    def get_singers(self):
+        for template in self.wiki_code.filter_templates():
+            if "infobox" in template.name.lower() and template.has("singer"):
+                singer_value = template.get("singer").value
+                singers = []
+                for node in singer_value.ifilter():
+                    if isinstance(node, mwparserfromhell.nodes.wikilink.Wikilink):
+                        title = node.title.strip_code().strip()
+                        display = node.text.strip_code().strip() if node.text else title
+                        singers.append((display, f"{self.wiki_url}/wiki/{title.replace(' ', '_')}"))
+                return singers if singers else None
+        return None
 
-    def extract_lyrics(self, content):
-        lyrics_block = re.search(r'==Lyrics==\s*(.*?)(\n\s*\n|\Z)', content, re.DOTALL).group(1)
-        tabber_block = re.search(r'<tabber>(.*?)</tabber>', lyrics_block, re.DOTALL)
-        tabs = tabber_block.group(1).split('|-|') if tabber_block else [lyrics_block]
-        lyrics = {}
+    def get_producers(self):
+        for template in self.wiki_code.filter_templates():
+            if "infobox" in template.name.lower() and template.has("producer"):
+                producer_value = template.get("producer").value
+                producers = []
 
-        for tab_content in tabs:
-            tab_name_match = re.search(r'\n(.*?)\s*=', tab_content)
-            tab_name = tab_name_match.group(1) if tab_name_match else 'Untitled'
+                for node in producer_value.ifilter():
+                    if isinstance(node, mwparserfromhell.nodes.wikilink.Wikilink):
+                        title = node.title.strip_code().strip()
+                        display = node.text.strip_code().strip() if node.text else title
+                        producers.append({"name": display, "link": f"{self.wiki_url}/wiki/{title.replace(' ', '_')}", "note": None})
+                    elif isinstance(node, mwparserfromhell.nodes.text.Text):
+                        text = node.strip()
+                        if text.startswith("(") and text.endswith(")") and producers:
+                            producers[-1]["note"] = text.strip("()").strip()
 
-            columns_match = re.search(r'\{\| style="width:100%"\s*(.*?)\|-', tab_content, re.DOTALL)
-            column_names = ['Original']
-            if columns_match:
-                column_names = [name.strip() for name in re.sub(r"[|'''\{\}]", "", columns_match.group(1)).split("\n") if name.strip()]
-            lyrics_dict = {col: [] for col in column_names}
+                return [(p["name"], p["note"], p["link"]) for p in producers] if producers else None
+        return None
 
-            # Replace <br /> with newline to treat it as a line break
-            tab_content = re.sub(r'<br />', '\n', tab_content)
+    def get_views(self):
+        for template in self.wiki_code.filter_templates():
+            if "infobox" in template.name.lower() and template.has('#views'):
+                return template.get('#views').value.strip_code().strip()
+        return None
 
-            # Handle the {{shared|3}} by distributing the lyrics across columns
-            for row in tab_content.split('|-'):
-                lyrics_parts = [part.strip() for part in row.split("\n") if part.strip()]
-                
-                # Check if this row is a shared one (contains {{shared|3}})
-                if '{{shared|3}}' in row:
-                    # Take the row and add it to all columns (this row will have the same content for each column)
-                    shared_lyrics = [part for part in row.split("\n") if part.strip() and part != '{{shared|3}}']
-                    for idx, col in enumerate(column_names):
-                        lyrics_dict[col].append("\n".join(shared_lyrics))  # Add the shared lyrics to all columns
-                else:
-                    # Normal lyrics row: add to respective columns if there's a match
-                    if len(lyrics_parts) == len(column_names):
-                        for idx, part in enumerate(lyrics_parts):
-                            lyrics_dict[column_names[idx]].append(part.replace('|', ''))
+    def get_links(self):
+        for template in self.wiki_code.filter_templates():
+            if "infobox" in template.name.lower() and template.has("link"):
+                link_value = template.get("link").value
+                links = []
 
-            lyrics[tab_name] = {col: "\n".join(lyrics_dict[col]) for col in lyrics_dict}
+                for node in link_value.ifilter():
+                    if isinstance(node, mwparserfromhell.nodes.external_link.ExternalLink):
+                        url = node.url.strip_code().strip()
+                        text = node.title.strip_code().strip() if node.title else url
+                        links.append((text, url))
 
-        return lyrics
+                return links if links else None
+        return None
 
-    def extract_date(self, content):
-        match = re.search(r"\|(original upload date|date)\s*=\s*\{\{Date\|(.*?)\}\}", content)
-        return match.group(2).strip() if match else False
+    def get_description(self):
+        for template in self.wiki_code.filter_templates():
+            if "infobox" in template.name.lower():
+                return template.get('description').value.strip_code().strip() if template.has('description') else None
+            
+    def get_lyrics(self):
+        pass
+            
+    def get_external_links(self):
+        sections = self.wiki_code.get_sections(matches='External Links', include_lead=False, include_headings=False)
+        if not sections:
+            return None
 
-    def extract_singers(self, content): 
-        match = re.search(r'\|singer\s*=\s*(.*?)\n', content)
-        
-        if match:
-            singer_line = match.group(1)
-            artist_pattern = r'\[\[([^\[\]]+?)\]\]|\{\{Singer\|([^\}]+?)\}\}'
-            matches = re.findall(artist_pattern, singer_line)
-            singers = []
-
-            for match in matches:
-                singer = match[0] if match[0] else match[1]
-                singer_list = [s.strip().split('|')[0] for s in singer.split(' and ')]
-                singer_list = [(s, f"{self.wiki_url}/wiki/{s.replace(' ', '_')}") for s in singer_list]
-                singers.extend(singer_list)
-
-            return singers if singers else False
-        return False
-
-    def extract_producers(self, content):
-        match = re.search(r'\|producer\s*=\s*(.*?)\n', content)
-        if match:
-            producer_line = match.group(1)
-            matches = re.findall(r"\[\[([^\[\]]+)\]\]\s*\(([^)]+)\)", producer_line)
-            producers = [(producer[0], producer[1], f"{self.wiki_url}/wiki/{producer[0].replace(' ', '_')}") for producer in matches]
-
-            return producers if producers else False
-        return False
-
-    def extract_views(self, content):
-        match = re.search(r"\#views\s*=\s*(.*?)(\n|$)", content)
-        return match.group(1) if match else False
-
-    def extract_links(self, content):
-        line_with_links = re.search(r'\|link = (.*)', content).group(1)
-        pattern = r'\[([^\s]+) ([^\]]+)\](?: <small>(.*?)</small>)?'
-        links = [
-            (f"{name} {small_text}" if small_text else name, url)
-            for url, name, small_text in re.findall(pattern, line_with_links)
-        ]
-        return links if links else False
-
-    def extract_extra_links(self, content):
-        match = re.search(r'(?<=\n==External Links==\n)(.*?)(?=\n==)', content, re.DOTALL)
-        if match:
-            section_content = match.group(1)
-            links = [(name, url) for url, name in re.findall(r'\[(https?://[^\s]+)\s+([^\]]+)\]', section_content)]
-            return links if links else False
-        return False
-
-    def extract_content_warning(self, content):
-        match = re.search(r"\{\{(Questionable|Explicit)\|(.*?)\}\}", content)
-        return (match.group(1), match.group(2)) if match else False
+        links = []
+        for node in sections[0].ifilter():
+            if isinstance(node, mwparserfromhell.nodes.external_link.ExternalLink):
+                url = node.url.strip_code().strip()
+                text = node.title.strip_code().strip() if node.title else url
+                links.append((text, url))
+        return links if links else None
+    
+    def get_unofficial_links(self):
+        for section in self.wiki_code.get_sections(include_lead=False, include_headings=True, flat=True):
+            heading_node = section.filter_headings(matches=lambda h: h.title.strip_code().strip().lower() == "unofficial")
+            if heading_node:
+                unofficial_links = []
+                for template in section.filter_templates():
+                    if template.name.strip().lower() == "vdb" and template.params:
+                        code = template.get(1).value.strip_code().strip()
+                        unofficial_links.append((f"VDB|{code}", f"https://vocadb.net/{code}"))
+                return unofficial_links if unofficial_links else None
+        return None
+    
+    def get_categories(self):
+        categories = []
+        for node in self.wiki_code.filter_wikilinks():
+            title = node.title.strip_code().strip()
+            if title.lower().startswith("category:"):
+                category_name = title.split(":", 1)[1].strip()
+                categories.append((category_name, f"{self.wiki_url}/wiki/{title.replace(' ', '_')}"))
+        return categories if categories else None
 
 
 page_title = "BUTCHER_VANITY"
 page_query = "Miss Death's Idol"
 
 song_info = SongInfo()
-song_info.get_page(page_query)
+song_info.request_page(page_query)
 
-print("Title:", song_info.page_title)
-#print("Description:", song_info.page_description)
-print("Singers:", song_info.page_singers)
-print("Producers:", song_info.page_producers)
-print("Image:", song_info.page_image)
-print("Date:", song_info.page_date)
-print("Views:", song_info.page_views)
-print("Links:", song_info.page_links)
-print("Extra Links:", song_info.page_extra_links)
-print("Content Warning:", song_info.page_content_warning)
-print("Lyrics:", song_info.page_lyrics)
-
+print(f"\nResults for '{page_query}':")
+print("\ncontent_warning:")
+print(song_info.get_content_warning())
+print("\nimage:")
+print(song_info.get_image())
+print("\ntitle:")
+print(song_info.get_title())
+print("\ncolor:")
+print(song_info.get_color())
+print("\nupload_date:")
+print(song_info.get_upload_date())
+print("\nsingers:")
+print(song_info.get_singers())
+print("\nproducers:")
+print(song_info.get_producers())
+print("\nviews:")
+print(song_info.get_views())
+print("\nlinks:")
+print(song_info.get_links())
+print("\ndescription:")
+print(song_info.get_description())
+print("\nexternal_links:")
+print(song_info.get_external_links())
+print("\nunofficial_links:")
+print(song_info.get_unofficial_links())
+print("\ncategories:")
+print(song_info.get_categories())
+print("\nlyrics:")
+print(song_info.get_lyrics())

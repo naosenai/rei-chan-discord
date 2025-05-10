@@ -39,8 +39,10 @@ class TTS(commands.Cog):
         ):
         await interaction.response.defer()  # Prevents timeout during generation
 
+        # Set this to private servers and/or personal accounts only for security and copyright reasons 
         allowed_users = set(map(int, os.getenv("ALLOWED_USERS", "").split(",")))
         allowed_guilds = set(map(int, os.getenv("ALLOWED_GUILDS", "").split(",")))
+
         filesize_limit = 8 * 1024 * 1024  # 8 MB in bytes, you can adjust if you have nitro
 
         if interaction.user.id in allowed_users: pass
