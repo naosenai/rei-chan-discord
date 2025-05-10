@@ -137,7 +137,7 @@ class RSSFeed(commands.Cog):
     async def report_message(self, entry, channel):
         await self.queue_message(entry, channel) # For now, just send the same message as a queue message
 
-    @tasks.loop(minutes=3)
+    @tasks.loop(minutes=30)
     async def rss_feed_task(self):
         self.guild = await self.bot.fetch_guild(int(os.getenv('GUILD_ID')))
         try:
