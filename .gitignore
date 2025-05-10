@@ -21,3 +21,15 @@ cogs/reddit/subcogs/data/timestamp_queue.json
 cogs/reddit/subcogs/data/timestamp_report.json
 cogs/music/subcogs/lyrics/__pycache__/lyrics.cpython-311.pyc
 cogs/music/subcogs/lyrics/components/__pycache__/vocaloid_scraper.cpython-311.pyc
+cogs/audio/subcogs/tts/__pycache__/tts.cpython-311.pyc
+cogs/audio/subcogs/tts/__pycache__/voices.cpython-311.pyc
+cogs/audio/subcogs/music/components/__pycache__/vocaloid_scraper.cpython-311.pyc
+cogs/audio/subcogs/music/__pycache__/lyrics.cpython-311.pyc
+cogs/audio/subcogs/__pycache__/__init__.cpython-311.pyc
+cogs/audio/subcogs/__pycache__/lyrics.cpython-311.pyc
+cogs/audio/__pycache__/audio.cpython-311.pyc
+cogs/audio/__pycache__/music.cpython-311.pyc
+cogs/audio/subcogs/tts/components/__pycache__/aivoice.cpython-311.pyc
+cogs/audio/subcogs/tts/components/__pycache__/en2ja.cpython-311.pyc
+cogs/audio/subcogs/tts/components/__pycache__/helper_funcs.cpython-311.pyc
+cogs/audio/subcogs/tts/components/__pycache__/voicevox.cpython-311.pyc

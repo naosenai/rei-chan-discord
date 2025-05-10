@@ -12,7 +12,7 @@ load_dotenv()
 TOKEN = getenv('DISCORD_TOKEN')  
 
 cogs = [
-    'cogs.music.music',
+    'cogs.audio.audio',
     'cogs.reddit.reddit',
     'cogs.games.games'
 ]
