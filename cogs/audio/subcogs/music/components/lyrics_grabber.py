@@ -1,6 +1,5 @@
 import requests
 import mwparserfromhell
-import re
 
 
 
@@ -11,6 +10,7 @@ class SongInfo:
         self.query_results = None
         self.page_title = None
         self.wiki_code = None
+        self.template = None
 
     def request_query(self, query):
         url = f"{self.wiki_url}/api.php?action=query&list=search&srsearch={query}&format=json"
@@ -39,105 +39,135 @@ class SongInfo:
     def get_content_warning(self):
         for template in self.wiki_code.filter_templates():
             name = template.name.lower().strip()
-            if name in ['explicit', 'questionable']:
+            if name in {'explicit', 'questionable'}:
                 return (name.capitalize(), template.get(1).value.strip_code().strip())
         return None
     
-    def get_image(self):
+    def set_template(self, do_alternate: bool = False):
         for template in self.wiki_code.filter_templates():
-            if "infobox" in template.name.lower():
-                if template.has('image'):
-                    filename = template.get('image').value.strip_code().strip()
-                    return f"{self.wiki_url}/wiki/File:{filename.replace(' ', '_')}"
-        return None
+            name = template.name.strip().lower()
+ 
+            if do_alternate:
+                if "alternateversion" in name:
+                    self.template = template
+                    return True
+            else:
+                if "infobox_song" in name:
+                    self.template = template
+                    return True
+        return False
+
+    def _template_field(*fields):
+        def decorator(func):
+            def wrapper(self, *args, **kwargs):
+                value = None
+                if self.template:
+                    for field in fields:
+                        if self.template.has(field):
+                            value = self.template.get(field).value
+                            break
+                return func(self, value, *args, **kwargs)
+            return wrapper
+        return decorator
     
-    def get_title(self):
-        for template in self.wiki_code.filter_templates():
-            if "infobox" in template.name.lower() and template.has('songtitle'):
-                return template.get('songtitle').value.strip_code().strip().strip('"')
-        return self.page_title
+    @_template_field('image')
+    def get_image(self, value):
+        if not value: return None
+        filename = value.strip_code().strip()
+        return f"{self.wiki_url}/wiki/File:{filename.replace(' ', '_')}"
     
-    def get_color(self):
-        for template in self.wiki_code.filter_templates():
-            if "infobox" in template.name.lower() and template.has("color"):
-                color_value = template.get("color").value.strip_code().strip()
-                if ";" in color_value:
-                    return color_value.split(";")[0].strip()
-                return color_value
-        return None
+    @_template_field('songtitle', 'title')
+    def get_title(self, value):
+        if not value: return None
+        value = str(value).replace("<br />", "\n").replace("<br>", "\n")
+        parts = [p.strip() for p in value.split("\n") if p.strip()]
+        
+        titles = []
+        for i, part in enumerate(parts):
+            text = mwparserfromhell.parse(part).strip_code().strip()
+            if ":" in text:
+                label, value = text.split(":", 1)
+                titles.append((label.strip(), value.strip()))
+            else:
+                label = "Original" if i == 0 else None
+                titles.append((label, text.strip('\'"')))
+        return titles
+    
+    @_template_field('color')
+    def get_color(self, value):
+        if not value: return None
+        color_value = value.strip_code().strip()
+        if ";" in color_value: 
+            return color_value.split(";")[0].strip()
+        return color_value
 
-    def get_upload_date(self):
-        for template in self.wiki_code.filter_templates():
-            if "infobox" in template.name.lower() and template.has('original upload date'):
-                date_template = template.get('original upload date').value
-                if date_template.strip_code().strip() == "":
-                    if date_template.filter_templates():
-                        inner = date_template.filter_templates()[0]
-                        year = inner.get(1).value.strip_code().strip() if inner.has(1) else ''
-                        month = inner.get(2).value.strip_code().strip() if inner.has(2) else ''
-                        day = inner.get(3).value.strip_code().strip() if inner.has(3) else ''
-                        return f"{month}/{day}/{year}"
-                else:
-                    return date_template.strip_code().strip()
-        return None
+    @_template_field('original upload date', 'upload_date')
+    def get_upload_date(self, value):
+        if not value: return None
+        date_template = value
+        if date_template.strip_code().strip() == "":
+            if date_template.filter_templates():
+                inner = date_template.filter_templates()[0]
+                year = inner.get(1).value.strip_code().strip() if inner.has(1) else ''
+                month = inner.get(2).value.strip_code().strip() if inner.has(2) else ''
+                day = inner.get(3).value.strip_code().strip() if inner.has(3) else ''
+                return f"{month} {day}, {year}"
+        else:
+            return date_template.strip_code().strip()
 
-    def get_singers(self):
-        for template in self.wiki_code.filter_templates():
-            if "infobox" in template.name.lower() and template.has("singer"):
-                singer_value = template.get("singer").value
-                singers = []
-                for node in singer_value.ifilter():
-                    if isinstance(node, mwparserfromhell.nodes.wikilink.Wikilink):
-                        title = node.title.strip_code().strip()
-                        display = node.text.strip_code().strip() if node.text else title
-                        singers.append((display, f"{self.wiki_url}/wiki/{title.replace(' ', '_')}"))
-                return singers if singers else None
-        return None
+    @_template_field('singer')
+    def get_singers(self, value):
+        if not value: return None
+        singers = []
+        for node in value.ifilter(recursive=True):
+            if isinstance(node, mwparserfromhell.nodes.wikilink.Wikilink):
+                title = node.title.strip_code().strip()
+                display = node.text.strip_code().strip() if node.text else title
+                singers.append((display, f"{self.wiki_url}/wiki/{title.replace(' ', '_')}"))
 
-    def get_producers(self):
-        for template in self.wiki_code.filter_templates():
-            if "infobox" in template.name.lower() and template.has("producer"):
-                producer_value = template.get("producer").value
-                producers = []
+            elif isinstance(node, mwparserfromhell.nodes.template.Template):
+                if node.name.strip().lower() == "singer" and node.has(1):
+                    name = node.get(1).value.strip_code().strip()
+                    title = name.replace(' ', '_')
+                    link = f"{self.wiki_url}/wiki/{title}"
+                    singers.append((name, link))
 
-                for node in producer_value.ifilter():
-                    if isinstance(node, mwparserfromhell.nodes.wikilink.Wikilink):
-                        title = node.title.strip_code().strip()
-                        display = node.text.strip_code().strip() if node.text else title
-                        producers.append({"name": display, "link": f"{self.wiki_url}/wiki/{title.replace(' ', '_')}", "note": None})
-                    elif isinstance(node, mwparserfromhell.nodes.text.Text):
-                        text = node.strip()
-                        if text.startswith("(") and text.endswith(")") and producers:
-                            producers[-1]["note"] = text.strip("()").strip()
+        return singers if singers else None
 
-                return [(p["name"], p["note"], p["link"]) for p in producers] if producers else None
-        return None
+    @_template_field('producer')
+    def get_producers(self, value):
+        if not value: return None
+        producers = []
+        for node in value.ifilter():
+            if isinstance(node, mwparserfromhell.nodes.wikilink.Wikilink):
+                title = node.title.strip_code().strip()
+                display = node.text.strip_code().strip() if node.text else title
+                producers.append({"name": display, "link": f"{self.wiki_url}/wiki/{title.replace(' ', '_')}", "note": None})
+            elif isinstance(node, mwparserfromhell.nodes.text.Text):
+                text = node.strip()
+                if text.startswith("(") and text.endswith(")") and producers:
+                    producers[-1]["note"] = text.strip("()").strip()
 
-    def get_views(self):
-        for template in self.wiki_code.filter_templates():
-            if "infobox" in template.name.lower() and template.has('#views'):
-                return template.get('#views').value.strip_code().strip()
-        return None
+        return [(p["name"], p["note"], p["link"]) for p in producers] if producers else None
 
-    def get_links(self):
-        for template in self.wiki_code.filter_templates():
-            if "infobox" in template.name.lower() and template.has("link"):
-                link_value = template.get("link").value
-                links = []
+    @_template_field('#views')
+    def get_views(self, value):
+        if value: return value.strip_code().strip()
 
-                for node in link_value.ifilter():
-                    if isinstance(node, mwparserfromhell.nodes.external_link.ExternalLink):
-                        url = node.url.strip_code().strip()
-                        text = node.title.strip_code().strip() if node.title else url
-                        links.append((text, url))
+    @_template_field('link')
+    def get_links(self, value):
+        if not value: return None
+        links = []
+        for node in value.ifilter():
+            if isinstance(node, mwparserfromhell.nodes.external_link.ExternalLink):
+                url = node.url.strip_code().strip()
+                text = node.title.strip_code().strip() if node.title else url
+                links.append((text, url))
+        return links if links else None
 
-                return links if links else None
-        return None
-
-    def get_description(self):
-        for template in self.wiki_code.filter_templates():
-            if "infobox" in template.name.lower():
-                return template.get('description').value.strip_code().strip() if template.has('description') else None
+    @_template_field('description')
+    def get_description(self, value):
+        if value: return value.strip_code().strip()
             
     def get_lyrics(self):
         pass
@@ -179,9 +209,15 @@ class SongInfo:
 
 page_title = "BUTCHER_VANITY"
 page_query = "Miss Death's Idol"
+#page_query = "のろい_(Noroi)"
 
 song_info = SongInfo()
 song_info.request_page(page_query)
+
+
+print("\ntemplate:")
+print(song_info.set_template(do_alternate=False))
+print(song_info.template)
 
 print(f"\nResults for '{page_query}':")
 print("\ncontent_warning:")
