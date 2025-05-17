@@ -1,250 +1,242 @@
 import requests
-import mwparserfromhell
+import mwparserfromhell as mw
+from typing import Callable, Iterable
 
 
 
-class SongInfo:
+def inject_field(*fields: str) -> Callable:
+    def decorator(func):
+        def wrapper(self, *args, **kwargs):
+            if not self.template: self.set_template()
+            for field in fields:
+                if self.template.has(field):
+                    return func(self, self.template.get(field).value, *args, **kwargs)
+        return wrapper
+    return decorator
+
+def inject_section(main_heading: str, subheading: str|None = None) -> Callable:
+    def decorator(func):
+        def wrapper(self, *args, **kwargs):
+            section = self.wiki_code.get_sections(matches=main_heading, include_lead=False)
+            if not section: return None
+            if subheading:
+                section = section[0].get_sections(matches=subheading, include_lead=False, include_headings=False)
+                if not section: return None
+            return func(self, section[0], *args, **kwargs)
+        return wrapper
+    return decorator
+
+
+
+class ParserBase:
     def __init__(self):
         self.wiki_url = "https://vocaloidlyrics.fandom.com"
         self.headers = {"User-Agent": "Rei-Chan/1.0"}
-        self.query_results = None
-        self.page_title = None
+        self.query = None
+        self.page = None
         self.wiki_code = None
         self.template = None
-
-    def request_query(self, query):
-        url = f"{self.wiki_url}/api.php?action=query&list=search&srsearch={query}&format=json"
+    
+    def request_query(self) -> list[any]|None:
+        url = f"{self.wiki_url}/api.php?action=query&list=search&srsearch={self.query}&format=json"
         res = requests.get(url, headers=self.headers)
         if res.status_code == 200:
             try:
                 results = res.json()['query']['search']
-                self.query_results = [(r['title'], f"{self.wiki_url}/wiki/{r['title'].replace(' ', '_')}") for r in results]
-                return True
+                return [(r['title'], f"{self.wiki_url}/wiki/{r['title'].replace(' ', '_')}") for r in results]
             except KeyError:
-                return None
-        return False
+                return
 
-    def request_page(self, title):
-        self.page_title = title
-        url = f"{self.wiki_url}/api.php?action=query&prop=revisions&rvprop=content&titles={title}&format=json"
+    def request_page(self) -> bool:
+        url = f"{self.wiki_url}/api.php?action=query&prop=revisions&rvprop=content&titles={self.page}&format=json"
         res = requests.get(url, headers=self.headers)
         if res.status_code == 200:
             pages = res.json()['query']['pages']
             for _, page in pages.items():
-                self.wiki_code = mwparserfromhell.parse(page['revisions'][0]['*'])
-                print(self.wiki_code)
+                self.wiki_code = mw.parse(page['revisions'][0]['*'])
                 return True
         return False
     
-    def get_content_warning(self):
-        for template in self.wiki_code.filter_templates():
-            name = template.name.lower().strip()
-            if name in {'explicit', 'questionable'}:
-                return (name.capitalize(), template.get(1).value.strip_code().strip())
-        return None
+    def clean(self, node):
+        return node.strip_code().strip()
     
-    def set_template(self, do_alternate: bool = False):
-        for template in self.wiki_code.filter_templates():
-            name = template.name.strip().lower()
- 
-            if do_alternate:
-                if "alternateversion" in name:
-                    self.template = template
-                    return True
-            else:
-                if "infobox_song" in name:
-                    self.template = template
-                    return True
-        return False
+    def parse_link(self, node) -> dict|None:
+        # Template to Wikilink
+        if isinstance(node, mw.nodes.template.Template):
+            name = node.name.strip().lower()
+            if name == "vdb" and node.has(1):
+                value = self.clean(node.get(1).value)
+                return {"label": "VocaDB", "link": f"https://vocadb.net/{value}"}
+            elif node.has(1):
+                title = self.clean(node.get(1).value)
+                return {"label": title, "link": f"{self.wiki_url}/wiki/{title.replace(' ', '_')}"}
 
-    def _template_field(*fields):
-        def decorator(func):
-            def wrapper(self, *args, **kwargs):
-                value = None
-                if self.template:
-                    for field in fields:
-                        if self.template.has(field):
-                            value = self.template.get(field).value
-                            break
-                return func(self, value, *args, **kwargs)
-            return wrapper
-        return decorator
-    
-    @_template_field('image')
-    def get_image(self, value):
-        if not value: return None
-        filename = value.strip_code().strip()
-        return f"{self.wiki_url}/wiki/File:{filename.replace(' ', '_')}"
-    
-    @_template_field('songtitle', 'title')
-    def get_title(self, value):
-        if not value: return None
-        value = str(value).replace("<br />", "\n").replace("<br>", "\n")
-        parts = [p.strip() for p in value.split("\n") if p.strip()]
-        
-        titles = []
-        for i, part in enumerate(parts):
-            text = mwparserfromhell.parse(part).strip_code().strip()
-            if ":" in text:
-                label, value = text.split(":", 1)
-                titles.append((label.strip(), value.strip()))
-            else:
-                label = "Original" if i == 0 else None
-                titles.append((label, text.strip('\'"')))
-        return titles
-    
-    @_template_field('color')
-    def get_color(self, value):
-        if not value: return None
-        color_value = value.strip_code().strip()
-        if ";" in color_value: 
-            return color_value.split(";")[0].strip()
-        return color_value
-
-    @_template_field('original upload date', 'upload_date')
-    def get_upload_date(self, value):
-        if not value: return None
-        date_template = value
-        if date_template.strip_code().strip() == "":
-            if date_template.filter_templates():
-                inner = date_template.filter_templates()[0]
-                year = inner.get(1).value.strip_code().strip() if inner.has(1) else ''
-                month = inner.get(2).value.strip_code().strip() if inner.has(2) else ''
-                day = inner.get(3).value.strip_code().strip() if inner.has(3) else ''
-                return f"{month} {day}, {year}"
-        else:
-            return date_template.strip_code().strip()
-
-    @_template_field('singer')
-    def get_singers(self, value):
-        if not value: return None
-        singers = []
-        for node in value.ifilter(recursive=True):
-            if isinstance(node, mwparserfromhell.nodes.wikilink.Wikilink):
-                title = node.title.strip_code().strip()
-                display = node.text.strip_code().strip() if node.text else title
-                singers.append((display, f"{self.wiki_url}/wiki/{title.replace(' ', '_')}"))
-
-            elif isinstance(node, mwparserfromhell.nodes.template.Template):
-                if node.name.strip().lower() == "singer" and node.has(1):
-                    name = node.get(1).value.strip_code().strip()
-                    title = name.replace(' ', '_')
-                    link = f"{self.wiki_url}/wiki/{title}"
-                    singers.append((name, link))
-
-        return singers if singers else None
-
-    @_template_field('producer')
-    def get_producers(self, value):
-        if not value: return None
-        producers = []
-        for node in value.ifilter():
-            if isinstance(node, mwparserfromhell.nodes.wikilink.Wikilink):
-                title = node.title.strip_code().strip()
-                display = node.text.strip_code().strip() if node.text else title
-                producers.append({"name": display, "link": f"{self.wiki_url}/wiki/{title.replace(' ', '_')}", "note": None})
-            elif isinstance(node, mwparserfromhell.nodes.text.Text):
-                text = node.strip()
-                if text.startswith("(") and text.endswith(")") and producers:
-                    producers[-1]["note"] = text.strip("()").strip()
-
-        return [(p["name"], p["note"], p["link"]) for p in producers] if producers else None
-
-    @_template_field('#views')
-    def get_views(self, value):
-        if value: return value.strip_code().strip()
-
-    @_template_field('link')
-    def get_links(self, value):
-        if not value: return None
-        links = []
-        for node in value.ifilter():
-            if isinstance(node, mwparserfromhell.nodes.external_link.ExternalLink):
-                url = node.url.strip_code().strip()
-                text = node.title.strip_code().strip() if node.title else url
-                links.append((text, url))
-        return links if links else None
-
-    @_template_field('description')
-    def get_description(self, value):
-        if value: return value.strip_code().strip()
-            
-    def get_lyrics(self):
-        pass
-            
-    def get_external_links(self):
-        sections = self.wiki_code.get_sections(matches='External Links', include_lead=False, include_headings=False)
-        if not sections:
-            return None
-
-        links = []
-        for node in sections[0].ifilter():
-            if isinstance(node, mwparserfromhell.nodes.external_link.ExternalLink):
-                url = node.url.strip_code().strip()
-                text = node.title.strip_code().strip() if node.title else url
-                links.append((text, url))
-        return links if links else None
-    
-    def get_unofficial_links(self):
-        for section in self.wiki_code.get_sections(include_lead=False, include_headings=True, flat=True):
-            heading_node = section.filter_headings(matches=lambda h: h.title.strip_code().strip().lower() == "unofficial")
-            if heading_node:
-                unofficial_links = []
-                for template in section.filter_templates():
-                    if template.name.strip().lower() == "vdb" and template.params:
-                        code = template.get(1).value.strip_code().strip()
-                        unofficial_links.append((f"VDB|{code}", f"https://vocadb.net/{code}"))
-                return unofficial_links if unofficial_links else None
-        return None
-    
-    def get_categories(self):
-        categories = []
-        for node in self.wiki_code.filter_wikilinks():
-            title = node.title.strip_code().strip()
+        # Wikilinks
+        elif isinstance(node, mw.nodes.wikilink.Wikilink):
+            title = self.clean(node.title or node.text)
             if title.lower().startswith("category:"):
-                category_name = title.split(":", 1)[1].strip()
-                categories.append((category_name, f"{self.wiki_url}/wiki/{title.replace(' ', '_')}"))
-        return categories if categories else None
+                label = title.split(":", 1)[1].strip()
+            else:
+                label = title
+            return {"label": label, "link": f"{self.wiki_url}/wiki/{title.replace(' ', '_')}"}
+
+        # External Links
+        elif isinstance(node, mw.nodes.external_link.ExternalLink):
+            label = self.clean(node.title)
+            link = self.clean(node.url)
+            return {"label": label, "link": link}
+    
+    def parse_links(self, source, *, include=("external", "wikilink", "template"), filter_func=None, enrich=None) -> list[dict]|None:
+        links = []
+        
+        for node in source.ifilter(recursive=True):
+            if isinstance(node, mw.nodes.external_link.ExternalLink) and "external" not in include: continue
+            elif isinstance(node, mw.nodes.wikilink.Wikilink) and "wikilink" not in include: continue
+            elif isinstance(node, mw.nodes.template.Template) and "template" not in include: continue
+
+            if filter_func and not filter_func(node): continue
+
+            link = self.parse_link(node)
+            if enrich: enrich(node, link, links)
+            if not link: continue
+
+            links.append(link)
+
+        return links or None
+    
+    def link_notes(self, node, link, links) -> None:
+        if isinstance(node, mw.nodes.text.Text):
+            text = node.strip()
+            if text.startswith("(") and text.endswith(")") and links:
+                links[-1]["note"] = text.strip("( )")
 
 
-page_title = "BUTCHER_VANITY"
+
+class VocaloidParser(ParserBase):
+    def __init__(self):
+        super().__init__()
+
+    def get_query_results(self, query):
+        self.query = query
+        return self.request_query()
+    
+    def set_page(self, page):
+        self.page = page
+        return self.request_page()
+    
+    def set_template(self, do_alternate: bool = False) -> bool:
+        template_name = "infobox_song" if not do_alternate else "alternateversion"
+        for template in self.wiki_code.filter_templates():
+            if template_name in self.clean(template.name).lower():
+                self.template = template
+                return True
+        return False
+    
+    # TODO: Add a boolean for epilepsy.
+    def get_content_warning(self):
+        return next((
+            {"type": name.capitalize() ,
+            "label": self.clean(template.get(1).value)}
+            for template in self.wiki_code.filter_templates()
+            if (name := template.name.lower().strip()) in {"explicit", "questionable"}
+        ), None)
+    
+    @inject_field('image')
+    def get_image(self, field):
+        return f"{self.wiki_url}/wiki/File:{self.clean(field).replace(' ', '_')}"
+    
+    @inject_field('songtitle', 'title')
+    def get_titles(self, field):
+        field = str(field).replace("<br />", "\n").replace("<br>", "\n").split("\n")
+        return [
+            {"language": text.split(":", 1)[0].strip() if ":" in text else ("Original" if i == 0 else None),
+            "title": text.split(":", 1)[1].strip() if ":" in text else text}
+            for i, value in enumerate(filter(None, field))
+            if (text := mw.parse(value).strip_code().strip('\'" '))
+        ] or None
+    
+    @inject_field('color')
+    def get_color(self, field):
+        colors = tuple(map(str.strip, field.split("; color:", 1)))
+        return {"main": colors[0], "highlight": colors[1] if len(colors) > 1 else None}
+
+    @inject_field('original upload date', 'date')
+    def get_date(self, field):
+        date_template = field.filter_templates()
+        if not date_template: return self.clean(field)
+        get = lambda n: self.clean(date_template[0].get(n).value)
+        return f"{get(1)} {get(2)}, {get(3)}"
+
+    @inject_field('singer')
+    def get_singers(self, field):
+        return self.parse_links(field, include=["wikilink", "template"])
+
+    @inject_field('producer')
+    def get_producers(self, field):
+        return self.parse_links(field, enrich=self.link_notes)
+
+    @inject_field('#views')
+    def get_views(self, field):
+        return self.clean(field) or None
+
+    @inject_field('link')
+    def get_links(self, field):
+        return self.parse_links(field, include=["external"])
+
+    @inject_field('description')
+    def get_description(self, field):
+        return self.clean(field) or None
+    
+    # TODO: Parse lyrics.
+    def get_lyrics(self):
+        return
+            
+    @inject_section('External Links')
+    def get_external_links(self, section):
+        return self.parse_links(section, include=["external"])
+    
+    @inject_section('External Links', 'Unofficial')
+    def get_unofficial_links(self, section):
+        return self.parse_links(section, include=["external", "template"])
+
+    @inject_section('External Links', 'Unofficial')
+    def get_categories(self, section):
+        filter = lambda node: isinstance(node, mw.nodes.wikilink.Wikilink) and self.clean(node.title).startswith("Category:")
+        return self.parse_links(section, include=["wikilink"], filter_func=filter)
+    
+    def extract_page(self):
+        return {
+            "content_warning": self.get_content_warning(),
+            "image": self.get_image(),
+            "title": self.get_titles(),
+            "color": self.get_color(),
+            "date": self.get_date(),
+            "singers": self.get_singers(),
+            "producers": self.get_producers(),
+            "views": self.get_views(),
+            "links": self.get_links(),
+            "description": self.get_description(),
+            "lyrics": self.get_lyrics(),
+            "external_links": self.get_external_links(),
+            "unofficial_links": self.get_unofficial_links(),
+            "categories": self.get_categories()
+        }
+    
+
+
+page_query = "BUTCHER_VANITY"
 page_query = "Miss Death's Idol"
-#page_query = "のろい_(Noroi)"
+page_query = "のろい_(Noroi)"
+page_query = "カゼマチグサ_(Kazemachigusa)"
 
-song_info = SongInfo()
-song_info.request_page(page_query)
-
+song_info = VocaloidParser()
+print(song_info.get_query_results(page_query))
+song_info.set_page(page_query)
 
 print("\ntemplate:")
 print(song_info.set_template(do_alternate=False))
 print(song_info.template)
 
-print(f"\nResults for '{page_query}':")
-print("\ncontent_warning:")
-print(song_info.get_content_warning())
-print("\nimage:")
-print(song_info.get_image())
-print("\ntitle:")
-print(song_info.get_title())
-print("\ncolor:")
-print(song_info.get_color())
-print("\nupload_date:")
-print(song_info.get_upload_date())
-print("\nsingers:")
-print(song_info.get_singers())
-print("\nproducers:")
-print(song_info.get_producers())
-print("\nviews:")
-print(song_info.get_views())
-print("\nlinks:")
-print(song_info.get_links())
-print("\ndescription:")
-print(song_info.get_description())
-print("\nexternal_links:")
-print(song_info.get_external_links())
-print("\nunofficial_links:")
-print(song_info.get_unofficial_links())
-print("\ncategories:")
-print(song_info.get_categories())
-print("\nlyrics:")
-print(song_info.get_lyrics())
+stuff = song_info.extract_page()
+for x in stuff:
+    print(f"\n{x}:\n{stuff[x]}")
