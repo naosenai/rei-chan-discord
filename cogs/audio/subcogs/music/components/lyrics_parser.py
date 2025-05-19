@@ -1,6 +1,7 @@
 import requests
 import mwparserfromhell as mw
-from typing import Callable, Iterable
+from typing import Callable
+from functools import singledispatchmethod
 
 
 
@@ -36,6 +37,11 @@ class ParserBase:
         self.page = None
         self.wiki_code = None
         self.template = None
+        self.TYPE_LABELS = {
+            mw.nodes.template.Template: "template",
+            mw.nodes.wikilink.Wikilink: "wikilink",
+            mw.nodes.external_link.ExternalLink: "external"
+        }
     
     def request_query(self) -> list[any]|None:
         url = f"{self.wiki_url}/api.php?action=query&list=search&srsearch={self.query}&format=json"
@@ -57,53 +63,55 @@ class ParserBase:
                 return True
         return False
     
-    def clean(self, node):
-        return node.strip_code().strip()
+    def clean(self, node, targ: str = None):
+        return node.strip_code().strip(targ)
     
-    def parse_link(self, node) -> dict|None:
-        # Template to Wikilink
-        if isinstance(node, mw.nodes.template.Template):
-            name = node.name.strip().lower()
-            if name == "vdb" and node.has(1):
-                value = self.clean(node.get(1).value)
-                return {"label": "VocaDB", "link": f"https://vocadb.net/{value}"}
-            elif node.has(1):
-                title = self.clean(node.get(1).value)
-                return {"label": title, "link": f"{self.wiki_url}/wiki/{title.replace(' ', '_')}"}
-
-        # Wikilinks
-        elif isinstance(node, mw.nodes.wikilink.Wikilink):
-            title = self.clean(node.title or node.text)
-            if title.lower().startswith("category:"):
-                label = title.split(":", 1)[1].strip()
-            else:
-                label = title
-            return {"label": label, "link": f"{self.wiki_url}/wiki/{title.replace(' ', '_')}"}
-
-        # External Links
-        elif isinstance(node, mw.nodes.external_link.ExternalLink):
-            label = self.clean(node.title)
-            link = self.clean(node.url)
-            return {"label": label, "link": link}
+    def parse_title(self, line) -> dict:
+        text = self.clean(mw.parse(line), '\'" ')
+        if not text: return None
+        if ':' in text: 
+            label, value = map(str.strip, text.split(':', 1))
+            return {"language": label, "title": value}
+        else: 
+            return {"language": None, "title": text}
+        
+    @singledispatchmethod
+    def parse_node(self, node):
+        return None
+    
+    @parse_node.register(mw.nodes.template.Template)
+    def template_link(self, node) -> dict|None:
+        if node.name.strip().lower() == "vdb" and node.has(1):
+            return {"label": "VocaDB", "link": f"https://vocadb.net/{self.clean(node.get(1).value)}"}
+        elif node.has(1):
+            title = self.clean(node.get(1).value)
+            return {"label": title, "link": f"{self.wiki_url}/wiki/{title.replace(' ', '_')}"}
+        
+    @parse_node.register(mw.nodes.wikilink.Wikilink)
+    def wiki_link(self, node) -> dict|None:
+        label = title = self.clean(node.title or node.text)
+        if title.lower().startswith("category:"): 
+            label = title.split(":", 1)[1].strip()
+        return {"label": label, "link": f"{self.wiki_url}/wiki/{title.replace(' ', '_')}"}
+    
+    @parse_node.register(mw.nodes.external_link.ExternalLink)
+    def external_link(self, node) -> dict|None:
+        return {"label": self.clean(node.title), "link": self.clean(node.url)}
     
     def parse_links(self, source, *, include=("external", "wikilink", "template"), filter_func=None, enrich=None) -> list[dict]|None:
         links = []
         
         for node in source.ifilter(recursive=True):
-            if isinstance(node, mw.nodes.external_link.ExternalLink) and "external" not in include: continue
-            elif isinstance(node, mw.nodes.wikilink.Wikilink) and "wikilink" not in include: continue
-            elif isinstance(node, mw.nodes.template.Template) and "template" not in include: continue
-
             if filter_func and not filter_func(node): continue
-
-            link = self.parse_link(node)
+            if self.TYPE_LABELS.get(type(node)) not in include: continue
+            link = self.parse_node(node)
             if enrich: enrich(node, link, links)
             if not link: continue
-
             links.append(link)
 
         return links or None
     
+    # Enrich function for parse_links
     def link_notes(self, node, link, links) -> None:
         if isinstance(node, mw.nodes.text.Text):
             text = node.strip()
@@ -147,13 +155,8 @@ class VocaloidParser(ParserBase):
     
     @inject_field('songtitle', 'title')
     def get_titles(self, field):
-        field = str(field).replace("<br />", "\n").replace("<br>", "\n").split("\n")
-        return [
-            {"language": text.split(":", 1)[0].strip() if ":" in text else ("Original" if i == 0 else None),
-            "title": text.split(":", 1)[1].strip() if ":" in text else text}
-            for i, value in enumerate(filter(None, field))
-            if (text := mw.parse(value).strip_code().strip('\'" '))
-        ] or None
+        lines = str(field).replace("<br />", "\n").replace("<br>", "\n").split("\n")
+        return [title for line in filter(None, lines) if (title := self.parse_title(line))] or None
     
     @inject_field('color')
     def get_color(self, field):
