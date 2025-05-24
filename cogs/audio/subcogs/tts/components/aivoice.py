@@ -37,8 +37,8 @@ class AIVoice(TtsControl):
             print("A.I.VOICE Editor (v1.3.0以降) がインストールされていません。")
             return False
         super().__init__()
-        self.host_name = None
-        self.voices = None
+        self.host_name = ""
+        self.voices = []
         self.start_api()
         self.disconnect()
 

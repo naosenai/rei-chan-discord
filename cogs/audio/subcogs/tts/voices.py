@@ -3,14 +3,14 @@ import discord
 from discord.ext import commands
 from discord import app_commands
 
-from .components.aivoice import AIVoice
+from .components.helper_funcs import aivoice_manager
 
 
 
 class Voices(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.aivoice = AIVoice()
+        self.aivoice = aivoice_manager
 
     @app_commands.user_install
     @app_commands.allowed_installs(guilds=True, users=True)
@@ -18,8 +18,9 @@ class Voices(commands.Cog):
     @app_commands.command(name="voices", description="Get a list of voices available for TTS.")
     async def voices(self, interaction: discord.Interaction):
         await interaction.response.defer()
-    
-        voice_list = self.aivoice.voices
+
+        aivoice = await self.aivoice.get_instance()
+        voice_list = aivoice.voices
 
         english_voices = [v for v in voice_list if "English" in v]
         chinese_voices = [v for v in voice_list if "Chinese" in v]

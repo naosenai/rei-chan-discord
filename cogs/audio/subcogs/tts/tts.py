@@ -5,15 +5,23 @@ from discord.ext import commands
 from discord import app_commands
 from datetime import datetime
 
-from .components.helper_funcs import convert_filetype
-from .components.aivoice import AIVoice, make_tts
+from .components.helper_funcs import convert_filetype, aivoice_manager
+from .components.aivoice import make_tts
+
+
+# 8 MB in bytes, you can adjust if you have nitro
+FILESIZE_LIMIT = 8 * 1024 * 1024
+
+# Set these to private servers and/or personal accounts only for security and copyright reasons 
+AUTH_USER = set(map(int, os.getenv("ALLOWED_USERS", "").split(",")))
+AUTH_GUILD = set(map(int, os.getenv("ALLOWED_GUILDS", "").split(",")))
 
 
 
 class TTS(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.aivoice = AIVoice()
+        self.aivoice = aivoice_manager
 
     @app_commands.user_install
     @app_commands.allowed_installs(guilds=True, users=True)
@@ -39,22 +47,16 @@ class TTS(commands.Cog):
         ):
         await interaction.response.defer()  # Prevents timeout during generation
 
-        # Set this to private servers and/or personal accounts only for security and copyright reasons 
-        allowed_users = set(map(int, os.getenv("ALLOWED_USERS", "").split(",")))
-        allowed_guilds = set(map(int, os.getenv("ALLOWED_GUILDS", "").split(",")))
-
-        filesize_limit = 8 * 1024 * 1024  # 8 MB in bytes, you can adjust if you have nitro
-
-        if interaction.user.id in allowed_users: pass
-        elif interaction.guild is None or interaction.guild.id not in allowed_guilds:
+        if interaction.user.id in AUTH_USER: pass
+        elif interaction.guild is None or interaction.guild.id not in AUTH_GUILD:
             await interaction.followup.send(
-                content="Due to security concerns, this command has been restricted to only be used in my server (Check the bot bio) or by authorized individuals.",
+                content="Due to security concerns, this command has been restricted to only be used by authorized individuals.",
                 ephemeral=True
             )
             return
 
-        audio_stream = await make_tts(
-            instance=self.aivoice,
+        audio = await make_tts(
+            instance=await self.aivoice.get_instance(),
             voice=voice,
             sentence=message,
             interval=str(interval),
@@ -62,15 +64,16 @@ class TTS(commands.Cog):
             intonation=str(intonation),
             volume=str(volume)
         )
-        if audio_stream is False:
+        if audio is False:
             await interaction.followup.send(
                 content="The program is busy, try again later!",
                 ephemeral=True
             )
             return
         
-        audio_stream, ext = convert_filetype(audio_stream, filesize_limit)
-        if audio_stream is False:
+        audio = convert_filetype(audio, FILESIZE_LIMIT)
+
+        if audio is False:
             await interaction.followup.send(
                 content="The file is too large to send, please try again with a shorter message!",
                 ephemeral=True
@@ -79,14 +82,15 @@ class TTS(commands.Cog):
         
         await interaction.followup.send(
             content=f"Here is your TTS output using **{voice}**:",
-            file=discord.File(audio_stream, filename=f"{datetime.now().strftime('%Y%m%d%H%M%S')}.{ext}")
+            file=discord.File(audio["stream"], filename=f"{datetime.now().strftime('%Y%m%d%H%M%S')}.{audio['ext']}")
         )
 
     @tts.autocomplete('voice')
     async def voice_autocomplete(self, interaction: discord.Interaction, current: str):
+        aivoice = await self.aivoice.get_instance()
         return [
             app_commands.Choice(name=v, value=v)
-            for v in self.aivoice.voices if current.lower() in v.lower()
+            for v in aivoice.voices if current.lower() in v.lower()
         ][:25]
         
         
