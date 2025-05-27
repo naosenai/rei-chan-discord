@@ -1,6 +1,7 @@
 from discord.ext import commands
 
 from .subcogs import TruthOrDare
+from .subcogs import PressTheButton
 
 
 
@@ -12,3 +13,4 @@ async def setup(bot):
     cog = Games(bot)
     await bot.add_cog(cog)
     await bot.add_cog(TruthOrDare(bot))
+    await bot.add_cog(PressTheButton(bot))
