@@ -33,3 +33,5 @@ cogs/audio/subcogs/tts/components/__pycache__/aivoice.cpython-311.pyc
 cogs/audio/subcogs/tts/components/__pycache__/en2ja.cpython-311.pyc
 cogs/audio/subcogs/tts/components/__pycache__/helper_funcs.cpython-311.pyc
 cogs/audio/subcogs/tts/components/__pycache__/voicevox.cpython-311.pyc
+cogs/games/subcogs/components/__pycache__/press_the_button_logic.cpython-311.pyc
+cogs/games/subcogs/__pycache__/press_the_button.cpython-311.pyc
