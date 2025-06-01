@@ -93,7 +93,7 @@ class RSSFeed(commands.Cog):
         return f"{soup.get_text(separator=' ', strip=True)}"
         
     async def queue_message(self, entry, channel):
-        embed = discord.Embed(title=f"{entry.get('title')}",
+        embed = discord.Embed(title=f"{entry.get('title')[:256]}",
                       url=f"{entry.get('link')}",
                       description=self.formatted_description(entry),
                       colour=0xf91565)
@@ -115,7 +115,7 @@ class RSSFeed(commands.Cog):
         await channel.send(f"{mention}", embed=embed, view=view)
     
     async def log_message(self, entry, channel):
-        embed = discord.Embed(title=entry.get('title'),
+        embed = discord.Embed(title=entry.get('title')[:256],
                       url=entry.get('link'),
                       colour=0xf91565)
         embed.set_author(name="Mod Log for r/sfwteto",
