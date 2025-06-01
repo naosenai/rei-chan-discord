@@ -2,7 +2,7 @@ import discord
 from discord.ext import commands
 from discord import app_commands
 
-from .components.press_the_button_logic import PressTheButtonLogic
+from .components.ptb_logic import PressTheButtonLogic
 
 class PressTheButtonView(discord.ui.View):
     def __init__(self, question: PressTheButtonLogic):
