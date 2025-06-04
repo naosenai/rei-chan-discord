@@ -71,7 +71,7 @@ class TruthOrDare(commands.Cog):
 
     @app_commands.command(name="random", description="Sends a random Truth or Dare question.")
     async def random(self, interaction: discord.Interaction):
-        await self.message_logic(interaction, None, None)
+        await self.message_logic(interaction, None, "RANDOM")
 
 async def setup(bot):
     await bot.add_cog(TruthOrDare(bot))
