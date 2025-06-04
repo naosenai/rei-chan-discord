@@ -30,7 +30,7 @@ class TTS(commands.Cog):
     @app_commands.describe(
         message="The message you want to convert", 
         voice="The voice you want to use (default: 足立 レイ)",
-        interval="The interval, or pause length, between words (default: 100, 50-200)",
+        pitch="The interval, or pause length, between words (default: 100, 50-200)",
         speed="The speed of the voice (default: 100, 50-400)",
         intonation="The intonation, or emphasis, of the voice (default: 100)",
         volume="The volume of the voice (default: 100)"
@@ -40,7 +40,7 @@ class TTS(commands.Cog):
         interaction: discord.Interaction, 
         message: str, 
         voice: str = "足立 レイ", 
-        interval: int = 100, 
+        pitch: int = 100, 
         speed: int = 100, 
         intonation: int = 100, 
         volume: int = 100
@@ -59,7 +59,7 @@ class TTS(commands.Cog):
             instance=await self.aivoice.get_instance(),
             voice=voice,
             sentence=message,
-            interval=str(interval),
+            pitch=str(pitch),
             speed=str(speed),
             intonation=str(intonation),
             volume=str(volume)

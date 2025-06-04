@@ -1,21 +1,26 @@
 # This code is heavily modified from https://github.com/sinsen9000/A.I.VOICE_API_python
-# Note that Kotonoha English and Chinese voices will fail to initialize unless you run AIVOICE before starting the API.
+# A.I.VOICE Editor (v1.3.0以降) is required to be installed on the system.
+# The API is not headless, so it requires the A.I.VOICE Editor to be running in the background.
 
-import os
-import io
-import time
-import json
-import clr
 import asyncio
+import clr
+import io
+import json
+import os
+import sys
 import tempfile
+import time
+
+# Ensure the path to the .NET assembly is added to the system path
+sys.path.append("C:/Program Files/AI/AIVoice/AIVoiceEditor/")
 
 from pydantic import BaseModel
 
 # Add .NET assembly reference and import API components
-clr.AddReference("C:/Program Files/AI/AIVoice/AIVoiceEditor/AI.Talk.Editor.Api")
+clr.AddReference("AI.Talk.Editor.Api") # type: ignore
 from AI.Talk.Editor.Api import TtsControl, HostStatus  # type: ignore
 
-# API can only process one TTS requests at the same time
+# API can only process one TTS request at the same time
 tts_lock = asyncio.Lock()
 
 
@@ -88,9 +93,9 @@ class AIVoice(TtsControl):
 
 
 
-async def make_tts(instance: AIVoice, voice:str, sentence:str, interval="100", speed="100", intonation="100", volume="100", param={"activation": False}):
+async def make_tts(instance: AIVoice, voice:str, sentence:str, pitch="100", speed="100", intonation="100", volume="100", param={"activation": False}):
     instance.connect()
-    interval = str(min(max(int(interval), 50), 200)) # Limited to API's accepted range
+    pitch = str(min(max(int(pitch), 50), 200))
     speed = str(min(max(int(speed), 50), 400))
     name = voice if voice in instance.voices else instance.voices[0] # Default to first voice if not found
 
@@ -99,13 +104,13 @@ async def make_tts(instance: AIVoice, voice:str, sentence:str, interval="100", s
         name=name,
         volume=int(volume) / 100,
         speed=int(speed) / 100,
-        pitch=int(interval) / 100,
+        pitch=int(pitch) / 100,
         intonation=int(intonation) / 100,
         angry=0,
         pleasure=0,
         sad=0
     )
-    if param.get("activation"): # Emotion values are supported but unused in the current implementation
+    if param.get("activation"): # Emotion values are unused in the current implementation, but can be set for future use
         emo_value = param.get("value", 0)
         emo_type = param.get("emo")
         if emo_type == "yorokobi":
