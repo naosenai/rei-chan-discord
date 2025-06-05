@@ -11,12 +11,10 @@ import sys
 import tempfile
 import time
 
-# Ensure the path to the .NET assembly is added to the system path
-sys.path.append("C:/Program Files/AI/AIVoice/AIVoiceEditor/")
-
 from pydantic import BaseModel
 
 # Add .NET assembly reference and import API components
+sys.path.append("C:/Program Files/AI/AIVoice/AIVoiceEditor/")
 clr.AddReference("AI.Talk.Editor.Api") # type: ignore
 from AI.Talk.Editor.Api import TtsControl, HostStatus  # type: ignore
 
@@ -52,7 +50,7 @@ class AIVoice(TtsControl):
         self.Initialize(self.host_name)
         self.StartHost()
         self.Connect()
-        self.voices = [i for i in self.VoicePresetNames] # You can use self.VoiceNames to exclude presets
+        self.voices = [i for i in self.VoicePresetNames] # You can use self.VoiceNames to exclude saved presets
 
     def connect(self):
         if self.Status == HostStatus.NotRunning:
@@ -64,7 +62,7 @@ class AIVoice(TtsControl):
         if not self.Status == HostStatus.NotRunning:
             self.Disconnect()
         
-    def set_preset(self, args):
+    def set_preset(self, args: VoiceArgs):
         preset_param = json.loads(self.GetVoicePreset(args.name))
         preset_param["Volume"] = args.volume
         preset_param["Speed"] = args.speed
@@ -87,10 +85,29 @@ class AIVoice(TtsControl):
         self.SaveAudioToFile(temp_path)
         with open(temp_path, "rb") as f:
             audio_stream = io.BytesIO(f.read())
-        os.remove(temp_path)
         audio_stream.seek(0)
+        os.remove(temp_path)
+        self.Text = ""
         return audio_stream
 
+
+
+class AIVoiceManager:
+    def __init__(self):
+        self._aivoice: AIVoice
+        self._ready = asyncio.Event()
+        self._init_task = asyncio.create_task(self._initialize())
+
+    async def _initialize(self):
+        loop = asyncio.get_event_loop()
+        self._aivoice = await loop.run_in_executor(None, AIVoice)
+        self._ready.set()
+        print("AIVoice initialized.")
+
+    async def get_instance(self):
+        await self._ready.wait()
+        return self._aivoice
+    
 
 
 async def make_tts(instance: AIVoice, voice:str, sentence:str, pitch="100", speed="100", intonation="100", volume="100", param={"activation": False}):
@@ -110,15 +127,15 @@ async def make_tts(instance: AIVoice, voice:str, sentence:str, pitch="100", spee
         pleasure=0,
         sad=0
     )
-    if param.get("activation"): # Emotion values are unused in the current implementation, but can be set for future use
-        emo_value = param.get("value", 0)
-        emo_type = param.get("emo")
-        if emo_type == "yorokobi":
-            voice_args.pleasure = emo_value
-        elif emo_type == "ikari":
-            voice_args.angry = emo_value
-        elif emo_type == "aware":
-            voice_args.sad = emo_value
+
+    if param.get("activation"): # Emotion values are unused in the current implementation because I have no idea what they do
+        emo_map = {
+            "yorokobi": "pleasure",
+            "ikari": "angry",
+            "aware": "sad"
+        }
+        emo_attr = emo_map.get(param.get("emo"))
+        if emo_attr: setattr(voice_args, emo_attr, param.get("value", 0))
 
     async with tts_lock:
         for attempt in range(3):
@@ -129,9 +146,16 @@ async def make_tts(instance: AIVoice, voice:str, sentence:str, pitch="100", spee
                 if "host program is busy" in str(e).lower():
                     time.sleep(0.2)
                 else:
+                    instance.disconnect()
                     raise e
         else:
             if attempt == 2:
+                instance.disconnect()
                 return False
     instance.disconnect()
     return audio_stream
+
+
+
+# Allows a single instance of AIVoice to be accessed globally
+aivoice_manager = AIVoiceManager()

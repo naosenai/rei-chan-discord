@@ -5,8 +5,8 @@ from discord.ext import commands
 from discord import app_commands
 from datetime import datetime
 
-from .components.helper_funcs import convert_filetype, aivoice_manager
-from .components.aivoice import make_tts
+from .components.helper_funcs import convert_filetype
+from .components.aivoice import make_tts, aivoice_manager
 
 
 # 8 MB in bytes, you can adjust if you have nitro

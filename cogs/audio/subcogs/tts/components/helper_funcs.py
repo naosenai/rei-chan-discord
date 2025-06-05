@@ -6,25 +6,6 @@ from typing import Literal
 from pydub import AudioSegment
 AudioSegment.converter = os.path.abspath("tools/ffmpeg.exe")
 
-from .aivoice import AIVoice
-
-
-class AIVoiceManager:
-    def __init__(self):
-        self._aivoice: AIVoice
-        self._ready = asyncio.Event()
-        self._init_task = asyncio.create_task(self._initialize())
-
-    async def _initialize(self):
-        loop = asyncio.get_event_loop()
-        self._aivoice = await loop.run_in_executor(None, AIVoice)
-        self._ready.set()
-        print("AIVoice initialized.")
-
-    async def get_instance(self):
-        await self._ready.wait()
-        return self._aivoice
-
 
 
 def convert_filetype(audio_stream: io.BytesIO, filelimit) -> dict[str, io.BytesIO | str] | Literal[False]:
@@ -43,8 +24,3 @@ def convert_filetype(audio_stream: io.BytesIO, filelimit) -> dict[str, io.BytesI
     if mp3_stream.getbuffer().nbytes < filelimit:
         return {"stream": mp3_stream, "ext": "mp3"}
     return False
-
-
-
-aivoice_manager = AIVoiceManager()
-    

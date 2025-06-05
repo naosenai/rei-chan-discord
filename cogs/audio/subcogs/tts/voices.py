@@ -3,7 +3,7 @@ import discord
 from discord.ext import commands
 from discord import app_commands
 
-from .components.helper_funcs import aivoice_manager
+from .components.aivoice import aivoice_manager
 
 
 
