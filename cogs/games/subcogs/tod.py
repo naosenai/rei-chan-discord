@@ -59,16 +59,25 @@ class TruthOrDare(commands.Cog):
             await self.cog.message_logic(interaction, self.qtype.lower() if self.qtype != "RANDOM" else None, self.category)
             self.view.stop()
 
+    @app_commands.user_install
+    @app_commands.allowed_installs(guilds=True, users=True)
+    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
     @app_commands.command(name="truth", description="Sends a random truth question.")
     @app_commands.choices(type=[app_commands.Choice(name=cat, value=cat) for cat in get_categories("truth")] + [app_commands.Choice(name="RANDOM", value="RANDOM")])
     async def truth(self, interaction: discord.Interaction, type: str = "RANDOM"):
         await self.message_logic(interaction, "truth", type)
 
+    @app_commands.user_install
+    @app_commands.allowed_installs(guilds=True, users=True)
+    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
     @app_commands.command(name="dare", description="Sends a random dare question.")
     @app_commands.choices(type=[app_commands.Choice(name=cat, value=cat) for cat in get_categories("dare")] + [app_commands.Choice(name="RANDOM", value="RANDOM")])
     async def dare(self, interaction: discord.Interaction, type: str = "RANDOM"):
         await self.message_logic(interaction, "dare", type)
 
+    @app_commands.user_install
+    @app_commands.allowed_installs(guilds=True, users=True)
+    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
     @app_commands.command(name="random", description="Sends a random Truth or Dare question.")
     async def random(self, interaction: discord.Interaction):
         await self.message_logic(interaction, None, "RANDOM")
